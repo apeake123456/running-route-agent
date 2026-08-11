@@ -15,6 +15,7 @@ from mcp.server.fastmcp import FastMCP
 import math 
 import random 
 import requests
+import sys
 
 # TODO 1: create the server instance.
 # This name shows up when a client asks "what server am I talking to".
@@ -129,6 +130,96 @@ def generate_loop_waypoints(start_lat: float, start_lon: float, target_km: float
         point = destination_point(start_lat, start_lon, angle, radius_km)
         waypoints.append(point)
     return {"waypoints": waypoints}
+
+
+
+
+# Add this as a new tool in step1_mcp_server_skeleton.py, below
+# generate_loop_waypoints.
+
+# TODO A: build the coordinate string OSRM expects.
+# OSRM wants: "lon1,lat1;lon2,lat2;lon3,lat3;..."
+# Note the order: LONGITUDE first, then latitude — backwards from how
+# you've been using (lat, lon) tuples everywhere else. This catches
+# almost everyone out at least once.
+#
+# Given `waypoints` — a list of (lat, lon) tuples like the ones your
+# generate_loop_waypoints tool already returns — build that string.
+# A list comprehension + ";".join(...) is the clean way to do this:
+#
+# coord_str = ";".join(f"{lon},{lat}" for lat, lon in waypoints)
+
+
+@mcp.tool()
+def snap_to_roads(waypoints: list) -> dict:
+    """Take a list of [lat, lon] waypoints (like the output of
+    generate_loop_waypoints) and turn them into a real, street-following
+    loop route using OSRM's routing engine. Returns the actual route
+    geometry and total distance."""
+
+    # TODO A goes here (see above)
+    coord_str = ";".join(f"{lon},{lat}" for lat, lon in waypoints)
+
+    # TODO B: build the request URL.
+    # OSRM's "trip" endpoint, with roundtrip=true so it returns to the
+    # start, and geometries=geojson so we get coordinates back in a
+    # format we can easily use.
+    url = (
+        f"https://router.project-osrm.org/trip/v1/driving/{coord_str}"
+        "?roundtrip=true&overview=full&geometries=geojson"
+    )
+
+    # TODO C: make the request and handle failure.
+    # requests.get(url, timeout=15) — same pattern you'll want to get
+    # comfortable with for any external API call. Check resp.ok before
+    # trying to use the response — if it's not ok, return a clean error
+    # dict rather than letting it crash (same lesson as geocode).
+    #
+    try:
+        print(url, file=sys.stderr)
+        resp = requests.get(url, timeout=15)
+    except Exception as e:
+        return {"error": f"Request failed: {e}"}
+    
+    if not resp.ok:
+        return {"error": f"OSRM returned status {resp.status_code}"}
+
+    # TODO D: parse the response.
+    # resp.json() turns the response into a Python dict. OSRM's trip
+    # response has this rough shape (you may want to print(data) once
+    # here just to SEE it before writing code against it — a good habit
+    # any time you're using an API for the first time):
+    #
+    # {
+    #   "code": "Ok",
+    #   "trips": [
+    #     {
+    #       "distance": 5234.5,   <- meters
+    #       "geometry": {
+    #         "coordinates": [[lon, lat], [lon, lat], ...]
+    #       }
+    #     }
+    #   ]
+    # }
+    #
+    data = resp.json()
+    print(data, file=sys.stderr)
+    if data.get("code") != "Ok" or not data.get("trips"):
+         return {"error": "Could not find a route through these points"}
+    
+    trip = data["trips"][0]
+
+    # TODO E: return something useful.
+    # The coordinates come back as [lon, lat] pairs (OSRM's convention
+    # again) — flip them back to [lat, lon] to stay consistent with
+    # everything else in this project. distance comes back in meters —
+    # you'll probably want to convert to km too.
+    #
+    route_coords = [[point[1], point[0]] for point in trip["geometry"]["coordinates"]]
+    return {
+         "distance_km": round(trip["distance"] / 1000, 2),
+         "coords": route_coords,
+     }
 
 
 if __name__ == "__main__":

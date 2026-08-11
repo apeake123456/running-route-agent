@@ -59,7 +59,14 @@ async def main():
             # session.call_tool(name, arguments) takes the tool's name
             # as a string, and a dict of arguments matching its schema
             # (remember `query: str` from the tool you wrote?).
-            result = await session.call_tool("generate_loop_waypoints", {"start_lat": 53.387, "start_lon": -2.353, "target_km":5})
+            test_waypoints = [
+            (53.387, -2.353),
+            (53.393, -2.357),
+            (53.391, -2.344),
+            (53.383, -2.342),
+            (53.380, -2.355),
+            ]
+            result = await session.call_tool("snap_to_roads", {"waypoints": test_waypoints})
             print(result)
 
 
